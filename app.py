@@ -13,7 +13,7 @@ def cargar_datos():
     return conn.read(ttl=0)
 
 # --- LOGIN ---
-usuarios = {"admin": "1234", "juan": "peso01", "maria": "peso02"}
+usuarios = {"admin": "1234", "juan": "peso01", "hperis": "admin"}
 
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
