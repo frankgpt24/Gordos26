@@ -56,4 +56,28 @@ else:
             nueva_fila = pd.DataFrame({"Fecha": [str(fecha)], 
                                        "Usuario": [st.session_state['usuario_actual']], 
                                        "Peso": [peso]})
-            df_actualizado = pd.concat([df, nueva
+            df_actualizado = pd.concat([df, nueva_fila], ignore_index=True)
+            conn.update(data=df_actualizado)
+            st.success("¡Peso registrado con éxito!")
+            st.rerun()
+
+    # --- GRÁFICA ---
+    if not df.empty:
+        st.subheader("📊 Evolución del grupo")
+        df['Fecha'] = pd.to_datetime(df['Fecha'])
+        # Ordenamos por fecha para que la gráfica no salga desordenada
+        df = df.sort_values('Fecha')
+        
+        fig = px.line(df, x="Fecha", y="Peso", color="Usuario", 
+                      markers=True, template="plotly_white")
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        with st.expander("Ver historial de datos"):
+            st.dataframe(df.sort_values(by="Fecha", ascending=False), use_container_width=True)
+    else:
+        st.info("Aún no hay datos. ¡Sé el primero en inaugurar la báscula!")
+
+    if st.sidebar.button("Cerrar Sesión"):
+        st.session_state['logueado'] = False
+        st.rerun()
