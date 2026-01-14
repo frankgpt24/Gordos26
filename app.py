@@ -3,9 +3,20 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-import random # <--- Nueva librería para las frases
+import random
 
+# 1. CONFIGURACIÓN Y ESTILOS PARA OCULTAR MENÚS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
+
+hide_st_style = """
+            <style>
+            #MainMenu {visibility: hidden;}
+            header {visibility: hidden;}
+            footer {visibility: hidden;}
+            .stDeployButton {display:none;}
+            </style>
+            """
+st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- LISTA DE FRASES MOTIVADORAS ---
 FRASES = [
@@ -25,7 +36,6 @@ FRASES = [
     "La meta es ser mejor de lo que fuiste ayer."
 ]
 
-# Elegir una frase al azar y guardarla para que no cambie al pulsar botones
 if 'frase_dia' not in st.session_state:
     st.session_state['frase_dia'] = random.choice(FRASES)
 
@@ -43,7 +53,7 @@ if 'logueado' not in st.session_state:
 
 if not st.session_state['logueado']:
     st.title("🏆 Gordos 2026")
-    st.subheader(st.session_state['frase_dia']) # Frase en el login
+    st.subheader(st.session_state['frase_dia'])
     st.divider()
     
     with st.sidebar:
@@ -54,7 +64,6 @@ if not st.session_state['logueado']:
             if usuario in usuarios and usuarios[usuario] == password:
                 st.session_state['logueado'] = True
                 st.session_state['usuario_actual'] = usuario
-                # Al loguearse, podemos elegir una frase nueva si queremos
                 st.session_state['frase_dia'] = random.choice(FRASES)
                 st.rerun()
             else:
@@ -62,7 +71,7 @@ if not st.session_state['logueado']:
 else:
     # --- CABECERA ---
     st.title("🏆 Gordos 2026")
-    st.markdown(f"### *{st.session_state['frase_dia']}* 💪") # Frase dentro de la web
+    st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     st.write(f"Conectado como: **{st.session_state['usuario_actual'].capitalize()}**")
     st.divider()
     
@@ -140,7 +149,6 @@ else:
 
     if st.sidebar.button("Cerrar Sesión"):
         st.session_state['logueado'] = False
-        # Limpiamos la frase para que cambie al siguiente login
         if 'frase_dia' in st.session_state:
             del st.session_state['frase_dia']
         st.rerun()
