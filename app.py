@@ -8,14 +8,12 @@ import random
 # 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
-# CSS mejorado: Ocultamos cabecera y pie de página, pero permitimos que el contenido se vea bien
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             header {visibility: hidden;}
             footer {visibility: hidden;}
             .stDeployButton {display:none;}
-            /* Esto elimina el espacio vacío que deja la cabecera oculta */
             .block-container {padding-top: 2rem;}
             </style>
             """
@@ -33,7 +31,6 @@ FRASES = [
     "No es una dieta, es un estilo de vida.",
     "Cada gramo cuenta, cada paso suma. ¡Tú puedes!",
     "Tu yo del futuro te agradecerá lo que hagas hoy.",
-    "La paciencia es amarga, pero su fruto es muy dulce.",
     "La meta es ser mejor de lo que fuiste ayer."
 ]
 
@@ -46,16 +43,14 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos():
     return conn.read(ttl=0)
 
-# --- SISTEMA DE LOGIN EN PÁGINA PRINCIPAL ---
+# --- SISTEMA DE LOGIN ---
 usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco"}
 
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
 if not st.session_state['logueado']:
-    # Centramos el login usando columnas
     _, col_login, _ = st.columns([1, 2, 1])
-    
     with col_login:
         st.title("🏆 Gordos 2026")
         st.subheader(st.session_state['frase_dia'])
@@ -63,7 +58,6 @@ if not st.session_state['logueado']:
         st.markdown("### Iniciar Sesión")
         usuario_input = st.text_input("Nombre de Usuario")
         password_input = st.text_input("Contraseña", type="password")
-        
         if st.button("Entrar al Reto", use_container_width=True):
             if usuario_input in usuarios and usuarios[usuario_input] == password_input:
                 st.session_state['logueado'] = True
@@ -73,11 +67,10 @@ if not st.session_state['logueado']:
             else:
                 st.error("Usuario o contraseña incorrectos")
 else:
-    # --- CONTENIDO DE LA APP (YA LOGUEADO) ---
+    # --- CABECERA ---
     st.title("🏆 Gordos 2026")
     st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     
-    # Fila superior con info de usuario y botón de salir
     col_user, col_logout = st.columns([4, 1])
     with col_user:
         st.write(f"Conectado como: **{st.session_state['usuario_actual'].capitalize()}**")
@@ -98,7 +91,7 @@ else:
         with col1:
             fecha = st.date_input("Fecha del pesaje", datetime.now())
         with col2:
-            peso = st.number_input("Peso (kg)", min_value=50.0, max_value=200.0, step=0.1)
+            peso = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, step=0.1)
         
         if st.button("Guardar peso", use_container_width=True):
             nueva_fila = pd.DataFrame({"Fecha": [str(fecha)], 
@@ -122,6 +115,9 @@ else:
                 peso_actual = user_data.iloc[-1]['Peso']
                 total_perdido = peso_inicial - peso_actual
                 
+                # Cálculo del porcentaje
+                porcentaje_perdido = (total_perdido / peso_inicial) * 100 if peso_inicial > 0 else 0
+                
                 if len(user_data) >= 2:
                     perdido_semana = user_data.iloc[-2]['Peso'] - peso_actual
                 else:
@@ -131,7 +127,9 @@ else:
                     "Usuario": user.capitalize(),
                     "Peso Actual": peso_actual,
                     "Total Perdido (kg)": round(total_perdido, 2),
-                    "Esta Semana (kg)": round(perdido_semana, 2)
+                    "Perdido (%)": f"{round(porcentaje_perdido, 2)}%",
+                    "Esta Semana (kg)": round(perdido_semana, 2),
+                    "Porcentaje_Num": porcentaje_perdido # Para ordenar correctamente
                 })
         
         df_stats = pd.DataFrame(stats_list)
@@ -145,15 +143,24 @@ else:
         st.divider()
         st.subheader("🏆 Salón de la Fama")
         
-        col_rank1, col_rank2 = st.columns(2)
+        # Ahora usamos 3 columnas
+        col_rank1, col_rank2, col_rank3 = st.columns(3)
+        
         with col_rank1:
-            st.markdown("#### 🔥 Ganadores de la Semana")
+            st.markdown("#### 🔥 Esta Semana")
             ranking_semanal = df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False)
             st.dataframe(ranking_semanal, hide_index=True, use_container_width=True)
+            
         with col_rank2:
-            st.markdown("#### 🥇 Ranking Histórico Total")
+            st.markdown("#### 🥇 Total Kilos")
             ranking_total = df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False)
             st.dataframe(ranking_total, hide_index=True, use_container_width=True)
+
+        with col_rank3:
+            st.markdown("#### 📉 Total %")
+            # Ordenamos por la columna numérica pero mostramos la que tiene el símbolo %
+            ranking_pct = df_stats[['Usuario', 'Perdido (%)', 'Porcentaje_Num']].sort_values(by="Porcentaje_Num", ascending=False)
+            st.dataframe(ranking_pct[['Usuario', 'Perdido (%)']], hide_index=True, use_container_width=True)
 
         with st.expander("Ver todos los registros"):
             st.dataframe(df.sort_values(by="Fecha", ascending=False), use_container_width=True)
