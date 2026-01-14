@@ -98,7 +98,7 @@ else:
         with col1:
             fecha = st.date_input("Fecha del pesaje", datetime.now())
         with col2:
-            peso = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, step=0.1)
+            peso = st.number_input("Peso (kg)", min_value=70.0, max_value=200.0, step=0.1)
         
         if st.button("Guardar peso", use_container_width=True):
             nueva_fila = pd.DataFrame({"Fecha": [str(fecha)], 
