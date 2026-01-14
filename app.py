@@ -5,20 +5,23 @@ import plotly.express as px
 from datetime import datetime
 import random
 
-# 1. CONFIGURACIÓN Y ESTILOS PARA OCULTAR MENÚS
+# 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
+# CSS mejorado: Ocultamos cabecera y pie de página, pero permitimos que el contenido se vea bien
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             header {visibility: hidden;}
             footer {visibility: hidden;}
             .stDeployButton {display:none;}
+            /* Esto elimina el espacio vacío que deja la cabecera oculta */
+            .block-container {padding-top: 2rem;}
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# --- LISTA DE FRASES MOTIVADORAS ---
+# --- LISTA DE FRASES ---
 FRASES = [
     "¡Nunca pierdas la esperanza!",
     "Para adelgazar hay que comer...",
@@ -31,8 +34,6 @@ FRASES = [
     "Cada gramo cuenta, cada paso suma. ¡Tú puedes!",
     "Tu yo del futuro te agradecerá lo que hagas hoy.",
     "La paciencia es amarga, pero su fruto es muy dulce.",
-    "Transforma tu cuerpo, transforma tu vida.",
-    "Si te cansas, aprende a descansar, no a rendirte.",
     "La meta es ser mejor de lo que fuiste ayer."
 ]
 
@@ -45,34 +46,48 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos():
     return conn.read(ttl=0)
 
-# --- LOGIN ---
+# --- SISTEMA DE LOGIN EN PÁGINA PRINCIPAL ---
 usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco"}
 
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
 if not st.session_state['logueado']:
-    st.title("🏆 Gordos 2026")
-    st.subheader(st.session_state['frase_dia'])
-    st.divider()
+    # Centramos el login usando columnas
+    _, col_login, _ = st.columns([1, 2, 1])
     
-    with st.sidebar:
-        st.title("Acceso")
-        usuario = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
-        if st.button("Entrar"):
-            if usuario in usuarios and usuarios[usuario] == password:
+    with col_login:
+        st.title("🏆 Gordos 2026")
+        st.subheader(st.session_state['frase_dia'])
+        st.write("---")
+        st.markdown("### Iniciar Sesión")
+        usuario_input = st.text_input("Nombre de Usuario")
+        password_input = st.text_input("Contraseña", type="password")
+        
+        if st.button("Entrar al Reto", use_container_width=True):
+            if usuario_input in usuarios and usuarios[usuario_input] == password_input:
                 st.session_state['logueado'] = True
-                st.session_state['usuario_actual'] = usuario
+                st.session_state['usuario_actual'] = usuario_input
                 st.session_state['frase_dia'] = random.choice(FRASES)
                 st.rerun()
             else:
                 st.error("Usuario o contraseña incorrectos")
 else:
-    # --- CABECERA ---
+    # --- CONTENIDO DE LA APP (YA LOGUEADO) ---
     st.title("🏆 Gordos 2026")
     st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
-    st.write(f"Conectado como: **{st.session_state['usuario_actual'].capitalize()}**")
+    
+    # Fila superior con info de usuario y botón de salir
+    col_user, col_logout = st.columns([4, 1])
+    with col_user:
+        st.write(f"Conectado como: **{st.session_state['usuario_actual'].capitalize()}**")
+    with col_logout:
+        if st.button("Cerrar Sesión", use_container_width=True):
+            st.session_state['logueado'] = False
+            if 'frase_dia' in st.session_state:
+                del st.session_state['frase_dia']
+            st.rerun()
+            
     st.divider()
     
     df = cargar_datos()
@@ -85,7 +100,7 @@ else:
         with col2:
             peso = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, step=0.1)
         
-        if st.button("Guardar peso"):
+        if st.button("Guardar peso", use_container_width=True):
             nueva_fila = pd.DataFrame({"Fecha": [str(fecha)], 
                                        "Usuario": [st.session_state['usuario_actual']], 
                                        "Peso": [peso]})
@@ -131,12 +146,10 @@ else:
         st.subheader("🏆 Salón de la Fama")
         
         col_rank1, col_rank2 = st.columns(2)
-        
         with col_rank1:
             st.markdown("#### 🔥 Ganadores de la Semana")
             ranking_semanal = df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False)
             st.dataframe(ranking_semanal, hide_index=True, use_container_width=True)
-            
         with col_rank2:
             st.markdown("#### 🥇 Ranking Histórico Total")
             ranking_total = df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False)
@@ -146,9 +159,3 @@ else:
             st.dataframe(df.sort_values(by="Fecha", ascending=False), use_container_width=True)
     else:
         st.info("Aún no hay datos registrados.")
-
-    if st.sidebar.button("Cerrar Sesión"):
-        st.session_state['logueado'] = False
-        if 'frase_dia' in st.session_state:
-            del st.session_state['frase_dia']
-        st.rerun()
