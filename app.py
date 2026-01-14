@@ -2,9 +2,32 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime
+import random # <--- Nueva librería para las frases
 
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
+
+# --- LISTA DE FRASES MOTIVADORAS ---
+FRASES = [
+    "¡Nunca pierdas la esperanza!",
+    "Para adelgazar hay que comer...",
+    "El éxito es la suma de pequeños esfuerzos repetidos día tras día.",
+    "Tu cuerpo escucha todo lo que tu mente dice. ¡Mantente positivo!",
+    "No te detengas hasta que te sientas orgulloso.",
+    "Comer bien es una forma de respetarte a ti mismo.",
+    "La disciplina es hacer lo que hay que hacer, incluso cuando no quieres.",
+    "No es una dieta, es un estilo de vida.",
+    "Cada gramo cuenta, cada paso suma. ¡Tú puedes!",
+    "Tu yo del futuro te agradecerá lo que hagas hoy.",
+    "La paciencia es amarga, pero su fruto es muy dulce.",
+    "Transforma tu cuerpo, transforma tu vida.",
+    "Si te cansas, aprende a descansar, no a rendirte.",
+    "La meta es ser mejor de lo que fuiste ayer."
+]
+
+# Elegir una frase al azar y guardarla para que no cambie al pulsar botones
+if 'frase_dia' not in st.session_state:
+    st.session_state['frase_dia'] = random.choice(FRASES)
 
 # Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -13,31 +36,33 @@ def cargar_datos():
     return conn.read(ttl=0)
 
 # --- LOGIN ---
-usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco"} # Añade aquí tus 8 usuarios
+usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco"}
 
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
 if not st.session_state['logueado']:
     st.title("🏆 Gordos 2026")
-    st.subheader("¡Nunca pierdas la esperanza!")
+    st.subheader(st.session_state['frase_dia']) # Frase en el login
     st.divider()
     
     with st.sidebar:
         st.title("Acceso")
-        usuario = st.sidebar.text_input("Usuario")
-        password = st.sidebar.text_input("Contraseña", type="password")
-        if st.sidebar.button("Entrar"):
+        usuario = st.text_input("Usuario")
+        password = st.text_input("Contraseña", type="password")
+        if st.button("Entrar"):
             if usuario in usuarios and usuarios[usuario] == password:
                 st.session_state['logueado'] = True
                 st.session_state['usuario_actual'] = usuario
+                # Al loguearse, podemos elegir una frase nueva si queremos
+                st.session_state['frase_dia'] = random.choice(FRASES)
                 st.rerun()
             else:
-                st.sidebar.error("Usuario o contraseña incorrectos")
+                st.error("Usuario o contraseña incorrectos")
 else:
     # --- CABECERA ---
     st.title("🏆 Gordos 2026")
-    st.markdown("### *¡Nunca pierdas la esperanza!* 💪")
+    st.markdown(f"### *{st.session_state['frase_dia']}* 💪") # Frase dentro de la web
     st.write(f"Conectado como: **{st.session_state['usuario_actual'].capitalize()}**")
     st.divider()
     
@@ -65,7 +90,6 @@ else:
         df['Fecha'] = pd.to_datetime(df['Fecha'])
         df = df.sort_values(['Usuario', 'Fecha'])
 
-        # Calcular estadísticas por usuario
         stats_list = []
         for user in df['Usuario'].unique():
             user_data = df[df['Usuario'] == user]
@@ -74,16 +98,13 @@ else:
                 peso_actual = user_data.iloc[-1]['Peso']
                 total_perdido = peso_inicial - peso_actual
                 
-                # Pérdida de esta semana (comparado con hace 7 días o el registro anterior)
                 if len(user_data) >= 2:
-                    # Comparamos el último peso con el penúltimo
                     perdido_semana = user_data.iloc[-2]['Peso'] - peso_actual
                 else:
                     perdido_semana = 0
                 
                 stats_list.append({
                     "Usuario": user.capitalize(),
-                    "Peso Inicial": peso_inicial,
                     "Peso Actual": peso_actual,
                     "Total Perdido (kg)": round(total_perdido, 2),
                     "Esta Semana (kg)": round(perdido_semana, 2)
@@ -104,13 +125,11 @@ else:
         
         with col_rank1:
             st.markdown("#### 🔥 Ganadores de la Semana")
-            # Ordenamos por los que más han perdido esta semana (positivo = han perdido peso)
             ranking_semanal = df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False)
             st.dataframe(ranking_semanal, hide_index=True, use_container_width=True)
             
         with col_rank2:
             st.markdown("#### 🥇 Ranking Histórico Total")
-            # Ordenamos por los que más han perdido en total
             ranking_total = df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False)
             st.dataframe(ranking_total, hide_index=True, use_container_width=True)
 
@@ -121,4 +140,7 @@ else:
 
     if st.sidebar.button("Cerrar Sesión"):
         st.session_state['logueado'] = False
+        # Limpiamos la frase para que cambie al siguiente login
+        if 'frase_dia' in st.session_state:
+            del st.session_state['frase_dia']
         st.rerun()
