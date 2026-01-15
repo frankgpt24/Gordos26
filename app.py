@@ -4,12 +4,11 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import random
-import extra_streamlit_components as stx # Nueva librería para cookies
+import extra_streamlit_components as stx
 
 # 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
-# CSS para limpieza visual e inyección de etiquetas para el navegador
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -21,12 +20,9 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# --- GESTIÓN DE COOKIES (RECORDAR SESIÓN) ---
-@st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_cookie_manager()
+# --- GESTIÓN DE COOKIES ---
+# Inicializamos sin caché para evitar el CachedWidgetWarning
+cookie_manager = stx.CookieManager()
 
 # --- LISTA DE FRASES ---
 FRASES = [
@@ -43,25 +39,25 @@ FRASES = [
 if 'frase_dia' not in st.session_state:
     st.session_state['frase_dia'] = random.choice(FRASES)
 
-# Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
     return conn.read(ttl=0)
 
-# --- SISTEMA DE LOGIN ---
 usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"}
 
-# Intentar auto-login con cookie
-saved_user = cookie_manager.get('user_weight_app')
-
+# --- LÓGICA DE LOGIN Y COOKIES ---
 if 'logueado' not in st.session_state:
+    st.session_state['logueado'] = False
+
+# Intentar recuperar la cookie si no estamos logueados
+if not st.session_state['logueado']:
+    saved_user = cookie_manager.get('user_weight_app')
     if saved_user in usuarios:
         st.session_state['logueado'] = True
         st.session_state['usuario_actual'] = saved_user
-    else:
-        st.session_state['logueado'] = False
 
+# --- PANTALLA DE LOGIN ---
 if not st.session_state['logueado']:
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
@@ -69,10 +65,8 @@ if not st.session_state['logueado']:
         st.subheader(st.session_state['frase_dia'])
         st.write("---")
         
-        # Formulario de Login
         with st.form("login_form"):
             st.markdown("### Acceso")
-            # Usamos etiquetas estándar para que el navegador las detecte
             usuario_input = st.text_input("Username", placeholder="Usuario")
             password_input = st.text_input("Password", type="password", placeholder="Contraseña")
             recordarme = st.checkbox("Recordarme en este equipo")
@@ -83,11 +77,9 @@ if not st.session_state['logueado']:
                 if usuario_input in usuarios and usuarios[usuario_input] == password_input:
                     st.session_state['logueado'] = True
                     st.session_state['usuario_actual'] = usuario_input
-                    
-                    # Si marca "Recordarme", guardamos una cookie por 30 días
                     if recordarme:
-                        cookie_manager.set('user_weight_app', usuario_input, expires_at=datetime.now() + pd.Timedelta(days=30))
-                    
+                        cookie_manager.set('user_weight_app', usuario_input, 
+                                         expires_at=datetime.now() + pd.Timedelta(days=30))
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
@@ -102,7 +94,7 @@ else:
     with col_logout:
         if st.button("Cerrar Sesión", use_container_width=True):
             st.session_state['logueado'] = False
-            cookie_manager.delete('user_weight_app') # Borramos la cookie al salir
+            cookie_manager.delete('user_weight_app')
             st.rerun()
             
     st.divider()
@@ -157,12 +149,12 @@ else:
         
         df_stats = pd.DataFrame(stats_list)
 
-        # --- GRÁFICA ---
+        # Gráfica
         st.subheader("📊 Evolución Temporal")
         fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
-        # --- TABLAS DE RANKING ---
+        # Tablas
         st.divider()
         st.subheader("🏆 Salón de la Fama")
         col_rank1, col_rank2, col_rank3 = st.columns(3)
