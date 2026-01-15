@@ -10,7 +10,6 @@ import time
 # 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
-# Ocultar menús de Streamlit
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -21,8 +20,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- INICIALIZAR GESTOR DE COOKIES ---
-# Lo hacemos fuera de cualquier función de caché para evitar el error amarillo
+# --- GESTIÓN DE COOKIES ---
 cookie_manager = stx.CookieManager()
 
 # --- LISTA DE FRASES ---
@@ -40,7 +38,6 @@ FRASES = [
 if 'frase_dia' not in st.session_state:
     st.session_state['frase_dia'] = random.choice(FRASES)
 
-# Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
@@ -52,14 +49,10 @@ usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete"
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
-# Si no estamos logueados en la sesión actual, intentamos leer la cookie
 if not st.session_state['logueado']:
-    # El componente necesita un instante para conectar con el navegador
-    # Mostramos un spinner muy breve mientras lee las cookies
     with st.spinner("Cargando sesión..."):
-        time.sleep(0.5) # Tiempo suficiente para que el componente "despierte"
+        time.sleep(0.5)
         user_cookie = cookie_manager.get('user_weight_app')
-        
         if user_cookie in usuarios:
             st.session_state['logueado'] = True
             st.session_state['usuario_actual'] = user_cookie
@@ -72,33 +65,26 @@ if not st.session_state['logueado']:
         st.title("🏆 Gordos 2026")
         st.subheader(st.session_state['frase_dia'])
         st.write("---")
-        
         with st.form("login_form"):
             st.markdown("### Acceso al Reto")
-            # Nombres en inglés para ayudar al autocompletado del navegador
             usuario_input = st.text_input("Username / Usuario", key="user_input")
             password_input = st.text_input("Password / Contraseña", type="password", key="pass_input")
             recordarme = st.checkbox("Recordarme en este equipo", value=True)
-            
             submit = st.form_submit_button("Entrar", use_container_width=True)
-            
             if submit:
                 if usuario_input in usuarios and usuarios[usuario_input] == password_input:
                     st.session_state['logueado'] = True
                     st.session_state['usuario_actual'] = usuario_input
-                    
                     if recordarme:
-                        # Guardamos la cookie por 30 días
                         cookie_manager.set('user_weight_app', usuario_input, 
                                          expires_at=datetime.now() + pd.Timedelta(days=30))
-                    
                     st.success("¡Bienvenido!")
                     time.sleep(0.5)
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
 else:
-    # --- CONTENIDO DE LA APP (YA LOGUEADO) ---
+    # --- CONTENIDO DE LA APP ---
     st.title("🏆 Gordos 2026")
     st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     
@@ -115,14 +101,28 @@ else:
     
     df = cargar_datos()
 
-    # --- REGISTRAR PESO ---
+    # --- REGISTRAR PESO (CON PESO POR DEFECTO INTELIGENTE) ---
     with st.expander("➕ Registrar nuevo peso"):
+        # Lógica para encontrar el último peso del usuario
+        peso_defecto = 80.0 # Valor base si no hay datos
+        if not df.empty:
+            # Filtramos los datos del usuario actual
+            datos_usuario = df[df['Usuario'] == st.session_state['usuario_actual']]
+            if not datos_usuario.empty:
+                # Cogemos el peso del último registro (el más reciente)
+                # Aseguramos que la fecha sea datetime para ordenar bien
+                datos_usuario = datos_usuario.copy()
+                datos_usuario['Fecha'] = pd.to_datetime(datos_usuario['Fecha'])
+                ultimo_registro = datos_usuario.sort_values('Fecha').iloc[-1]
+                peso_defecto = float(ultimo_registro['Peso'])
+
         with st.form("registro_peso"):
             col1, col2 = st.columns(2)
             with col1:
                 fecha = st.date_input("Fecha", datetime.now())
             with col2:
-                peso = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, step=0.1)
+                # Aquí aplicamos el peso por defecto dinámico
+                peso = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=peso_defecto, step=0.1)
             
             if st.form_submit_button("Guardar peso", use_container_width=True):
                 nueva_fila = pd.DataFrame({"Fecha": [str(fecha)], 
@@ -130,7 +130,8 @@ else:
                                            "Peso": [peso]})
                 df_actualizado = pd.concat([df, nueva_fila], ignore_index=True)
                 conn.update(data=df_actualizado)
-                st.success("¡Peso registrado!")
+                st.success(f"¡Peso de {peso} kg registrado!")
+                time.sleep(1)
                 st.rerun()
 
     # --- ESTADÍSTICAS Y RANKINGS ---
