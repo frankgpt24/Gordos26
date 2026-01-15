@@ -46,7 +46,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos():
     return conn.read(ttl=0)
 
-usuarios = {"admin": "1234", "juan": "peso01", "maria": "peso02", "pedro": "peso03"}
+usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"}
 
 # --- LÓGICA DE AUTO-LOGIN ---
 if 'logueado' not in st.session_state:
