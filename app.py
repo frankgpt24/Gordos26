@@ -224,4 +224,26 @@ else:
 
         # --- CUADRO DE HONOR AL FINAL ---
         st.divider()
-        st.
+        st.subheader("🎖️ Cuadro de Honor")
+        m1, m2, m3, m4 = st.columns(4)
+        
+        rey_semana = df_stats.sort_values("Esta Semana (kg)", ascending=False).iloc[0]
+        lider_abs = df_stats.sort_values("Total Perdido (kg)", ascending=False).iloc[0]
+        mas_constante = df_stats.sort_values("Entradas", ascending=False).iloc[0]
+        mejor_pct = df_stats.sort_values("Perdido (%)", ascending=False).iloc[0]
+
+        with m1:
+            st.markdown(f"<div class='medal-card'>🥇 <b>Rey de la Semana</b><br>{rey_semana['Usuario']}<br><small>{rey_semana['Esta Semana (kg)']} kg perdidos</small></div>", unsafe_allow_html=True)
+        with m2:
+            st.markdown(f"<div class='medal-card'>🏆 <b>Líder Absoluto</b><br>{lider_abs['Usuario']}<br><small>{lider_abs['Total Perdido (kg)']} kg totales</small></div>", unsafe_allow_html=True)
+        with m3:
+            st.markdown(f"<div class='medal-card'>📉 <b>Mejor %</b><br>{mejor_pct['Usuario']}<br><small>{mejor_pct['Perdido (%)']}% del peso</small></div>", unsafe_allow_html=True)
+        with m4:
+            st.markdown(f"<div class='medal-card'>📅 <b>Más Constante</b><br>{mas_constante['Usuario']}<br><small>{mas_constante['Entradas']} pesajes</small></div>", unsafe_allow_html=True)
+
+        with st.expander("Ver historial completo"):
+            df_display = df.copy()
+            df_display['Fecha'] = df_display['Fecha'].dt.strftime('%d/%m/%Y')
+            st.dataframe(df_display.sort_values(by="Fecha", ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("Aún no hay datos registrados.")
