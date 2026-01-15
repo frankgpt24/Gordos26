@@ -5,6 +5,7 @@ import plotly.express as px
 from datetime import datetime
 import random
 import extra_streamlit_components as stx
+import time
 
 # 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
@@ -21,7 +22,7 @@ hide_st_style = """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 # --- GESTIÓN DE COOKIES ---
-# Inicializamos sin caché para evitar el CachedWidgetWarning
+# Inicializamos el gestor al principio
 cookie_manager = stx.CookieManager()
 
 # --- LISTA DE FRASES ---
@@ -46,16 +47,25 @@ def cargar_datos():
 
 usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"}
 
-# --- LÓGICA DE LOGIN Y COOKIES ---
+# --- LÓGICA DE AUTO-LOGIN (EL TRUCO) ---
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
-# Intentar recuperar la cookie si no estamos logueados
 if not st.session_state['logueado']:
-    saved_user = cookie_manager.get('user_weight_app')
+    # Intentamos obtener todas las cookies. 
+    # Si devuelve algo, es que el gestor ya está listo.
+    cookies = cookie_manager.get_all()
+    
+    # Si el gestor aún no responde, esperamos un pelín (solo la primera vez)
+    if not cookies:
+        time.sleep(0.5)
+        cookies = cookie_manager.get_all()
+        
+    saved_user = cookies.get('user_weight_app')
     if saved_user in usuarios:
         st.session_state['logueado'] = True
         st.session_state['usuario_actual'] = saved_user
+        st.rerun()
 
 # --- PANTALLA DE LOGIN ---
 if not st.session_state['logueado']:
@@ -78,13 +88,14 @@ if not st.session_state['logueado']:
                     st.session_state['logueado'] = True
                     st.session_state['usuario_actual'] = usuario_input
                     if recordarme:
+                        # Guardamos la cookie por 30 días
                         cookie_manager.set('user_weight_app', usuario_input, 
                                          expires_at=datetime.now() + pd.Timedelta(days=30))
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
 else:
-    # --- CONTENIDO DE LA APP ---
+    # --- CONTENIDO DE LA APP (YA LOGUEADO) ---
     st.title("🏆 Gordos 2026")
     st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     
