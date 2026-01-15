@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import random
+import extra_streamlit_components as stx
 import time
 
 # 1. CONFIGURACIÓN Y ESTILOS
@@ -20,6 +21,10 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
+# --- GESTIÓN DE COOKIES (HÍBRIDO) ---
+# Inicializamos el gestor sin decoradores de caché para evitar el error amarillo
+cookie_manager = stx.CookieManager()
+
 # --- LISTA DE FRASES ---
 FRASES = [
     "¡Nunca pierdas la esperanza!",
@@ -35,18 +40,29 @@ FRASES = [
 if 'frase_dia' not in st.session_state:
     st.session_state['frase_dia'] = random.choice(FRASES)
 
-# Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
     return conn.read(ttl=0)
 
-# --- SISTEMA DE LOGIN ---
 usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"}
 
+# --- LÓGICA DE LOGIN ---
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
+# Intento de Auto-Login mediante Cookie
+if not st.session_state['logueado']:
+    # Le damos un momento al componente de cookies para que se cargue en el navegador
+    time.sleep(0.2) 
+    user_cookie = cookie_manager.get('user_weight_app')
+    
+    if user_cookie in usuarios:
+        st.session_state['logueado'] = True
+        st.session_state['usuario_actual'] = user_cookie
+        st.rerun()
+
+# --- PANTALLA DE ACCESO ---
 if not st.session_state['logueado']:
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
@@ -54,26 +70,31 @@ if not st.session_state['logueado']:
         st.subheader(st.session_state['frase_dia'])
         st.write("---")
         
-        # Formulario optimizado para que el navegador "vea" un login
-        with st.form("login_form", clear_on_submit=False):
-            st.markdown("### Acceso al Reto")
-            # Usamos etiquetas claras para el navegador
-            usuario_input = st.text_input("Usuario (Username)", key="user_key")
-            password_input = st.text_input("Contraseña (Password)", type="password", key="pass_key")
+        with st.form("login_form"):
+            st.markdown("### Iniciar Sesión")
+            usuario_input = st.text_input("Usuario", key="user_input")
+            password_input = st.text_input("Contraseña", type="password", key="pass_input")
+            recordarme = st.checkbox("Recordarme en este equipo", value=True)
             
-            submit_button = st.form_submit_button("Entrar", use_container_width=True)
+            submit = st.form_submit_button("Entrar al Reto", use_container_width=True)
             
-            if submit_button:
+            if submit:
                 if usuario_input in usuarios and usuarios[usuario_input] == password_input:
                     st.session_state['logueado'] = True
                     st.session_state['usuario_actual'] = usuario_input
-                    st.success("Accediendo...")
-                    time.sleep(0.5) # Pausa mínima para que el navegador registre el envío
+                    
+                    if recordarme:
+                        # Guardamos la cookie por 30 días
+                        cookie_manager.set('user_weight_app', usuario_input, 
+                                         expires_at=datetime.now() + pd.Timedelta(days=30))
+                    
+                    st.success("¡Bienvenido!")
+                    time.sleep(0.5)
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
 else:
-    # --- CABECERA ---
+    # --- CONTENIDO DE LA APP (YA LOGUEADO) ---
     st.title("🏆 Gordos 2026")
     st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     
@@ -83,6 +104,7 @@ else:
     with col_logout:
         if st.button("Cerrar Sesión", use_container_width=True):
             st.session_state['logueado'] = False
+            cookie_manager.delete('user_weight_app') # Borramos cookie al salir
             st.rerun()
             
     st.divider()
@@ -107,7 +129,7 @@ else:
                 st.success("¡Peso registrado!")
                 st.rerun()
 
-    # --- LÓGICA DE ESTADÍSTICAS ---
+    # --- ESTADÍSTICAS Y RANKINGS ---
     if not df.empty:
         df['Fecha'] = pd.to_datetime(df['Fecha'])
         df = df.sort_values(['Usuario', 'Fecha'])
@@ -119,6 +141,7 @@ else:
                 peso_inicial = user_data.iloc[0]['Peso']
                 peso_actual = user_data.iloc[-1]['Peso']
                 total_perdido = peso_inicial - peso_actual
+                # % de pérdida = (Kilos perdidos / Peso Inicial) * 100
                 porcentaje_perdido = (total_perdido / peso_inicial) * 100 if peso_inicial > 0 else 0
                 
                 if len(user_data) >= 2:
@@ -137,22 +160,20 @@ else:
         
         df_stats = pd.DataFrame(stats_list)
 
-        # Gráfica
         st.subheader("📊 Evolución Temporal")
         fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Tablas de Ranking
         st.divider()
         st.subheader("🏆 Salón de la Fama")
-        col_rank1, col_rank2, col_rank3 = st.columns(3)
-        with col_rank1:
+        c1, c2, c3 = st.columns(3)
+        with c1:
             st.markdown("#### 🔥 Esta Semana")
             st.dataframe(df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False), hide_index=True, use_container_width=True)
-        with col_rank2:
+        with c2:
             st.markdown("#### 🥇 Total Kilos")
             st.dataframe(df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False), hide_index=True, use_container_width=True)
-        with col_rank3:
+        with c3:
             st.markdown("#### 📉 Total %")
             ranking_pct = df_stats[['Usuario', 'Perdido (%)', 'Porcentaje_Num']].sort_values(by="Porcentaje_Num", ascending=False)
             st.dataframe(ranking_pct[['Usuario', 'Perdido (%)']], hide_index=True, use_container_width=True)
