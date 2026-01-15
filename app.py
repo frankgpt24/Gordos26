@@ -41,26 +41,28 @@ if 'frase_dia' not in st.session_state:
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNCIÓN DE CARGA ROBUSTA (ELIMINA EL FALLO DE FECHAS) ---
+# --- FUNCIÓN DE CARGA "ULTRA-ROBUSTA" ---
 def cargar_datos():
     df = conn.read(ttl=0)
     if df is not None and not df.empty:
-        # Convertimos a fecha forzando el formato europeo (dayfirst=True)
-        # Esto soluciona el problema de la foto donde se mezclan formatos
+        # Paso 1: Convertir todo a texto para evitar conflictos de tipos
+        df['Fecha'] = df['Fecha'].astype(str)
+        
+        # Paso 2: Intento de conversión inteligente
+        # Probamos primero con formato europeo (DD/MM/AAAA) que es el que te está dando problemas
         df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
         
-        # Eliminamos filas que no se hayan podido convertir (datos corruptos)
+        # Paso 3: Limpieza de datos fallidos
         df = df.dropna(subset=['Fecha', 'Peso'])
         
-        # Convertimos peso a número por si acaso
+        # Paso 4: Normalizar (quitar horas) y asegurar que el peso sea número
+        df['Fecha'] = df['Fecha'].dt.normalize()
         df['Peso'] = pd.to_numeric(df['Peso'], errors='coerce')
         df = df.dropna(subset=['Peso'])
         
-        # IMPORTANTE: Quitamos la hora para que todos los registros del mismo día coincidan
-        df['Fecha'] = df['Fecha'].dt.normalize()
-        
-        # Ordenamos cronológicamente (vital para la gráfica)
-        return df.sort_values(['Usuario', 'Fecha'])
+        # Paso 5: ORDENAR CRONOLÓGICAMENTE (Vital para que la línea de la gráfica no desaparezca)
+        df = df.sort_values(by='Fecha', ascending=True)
+        return df
     return pd.DataFrame(columns=["Fecha", "Usuario", "Peso"])
 
 # --- USUARIOS ---
@@ -133,6 +135,7 @@ else:
     if not df.empty:
         total_perdido_grupal = 0
         stats_list = []
+        # Calculamos stats sobre el DF ya limpio y ordenado
         for user in df['Usuario'].unique():
             user_data = df[df['Usuario'] == user]
             if len(user_data) > 0:
@@ -164,10 +167,12 @@ else:
                 f_reg = st.date_input("Fecha", datetime.now())
                 p_reg = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=peso_defecto, step=0.1)
                 if st.form_submit_button("Guardar", use_container_width=True):
-                    # Guardamos en formato ISO (YYYY-MM-DD) para máxima compatibilidad
-                    nueva_fila = pd.DataFrame({"Fecha": [f_reg.strftime('%Y-%m-%d')], 
-                                               "Usuario": [st.session_state['usuario_actual']], 
-                                               "Peso": [p_reg]})
+                    # GUARDADO EN FORMATO ISO (El que mejor entiende Google)
+                    nueva_fila = pd.DataFrame({
+                        "Fecha": [f_reg.strftime('%Y-%m-%d')], 
+                        "Usuario": [st.session_state['usuario_actual']], 
+                        "Peso": [p_reg]
+                    })
                     df_upd = pd.concat([df, nueva_fila], ignore_index=True)
                     conn.update(data=df_upd)
                     st.success("¡Registrado!")
@@ -183,22 +188,20 @@ else:
                     ultimo_val = mis_datos.iloc[-1]
                     st.warning(f"Se borrará: {ultimo_val['Peso']}kg del {ultimo_val['Fecha'].strftime('%d/%m/%Y')}")
                     if st.button("Confirmar Borrado", use_container_width=True):
-                        # Obtenemos el DataFrame original completo para borrar por índice real
-                        df_completo = conn.read(ttl=0)
-                        df_upd = df_completo.drop(ultimo_idx)
+                        # Leemos el original para borrar el índice exacto
+                        df_original = conn.read(ttl=0)
+                        df_upd = df_original.drop(ultimo_idx)
                         conn.update(data=df_upd)
                         st.error("Registro eliminado")
                         time.sleep(1)
                         st.rerun()
-                else:
-                    st.info("No tienes registros todavía.")
 
     # --- VISUALIZACIÓN ---
     if not df.empty:
         st.subheader("📊 Evolución Temporal")
-        # Aseguramos que la gráfica use las fechas limpias y ordenadas
+        # Forzamos a Plotly a tratar el eje X como fechas
         fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
-        fig.update_xaxes(tickformat="%d/%m/%y") # Formato bonito en el eje X
+        fig.update_xaxes(type='date', tickformat="%d/%m/%y")
         st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
@@ -219,6 +222,6 @@ else:
         with st.expander("Ver historial completo"):
             df_display = df.copy()
             df_display['Fecha'] = df_display['Fecha'].dt.strftime('%d/%m/%Y')
-            st.dataframe(df_display.sort_values(by=["Fecha", "Usuario"], ascending=[False, True]), use_container_width=True, hide_index=True)
+            st.dataframe(df_display.sort_values(by="Fecha", ascending=False), use_container_width=True, hide_index=True)
     else:
         st.info("Aún no hay datos registrados.")
