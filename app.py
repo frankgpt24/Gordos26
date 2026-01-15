@@ -41,28 +41,26 @@ if 'frase_dia' not in st.session_state:
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNCIÓN DE CARGA "ULTRA-ROBUSTA" ---
+# --- FUNCIÓN DE CARGA "TODOTERRENO" ---
 def cargar_datos():
     df = conn.read(ttl=0)
     if df is not None and not df.empty:
-        # Paso 1: Convertir todo a texto para evitar conflictos de tipos
-        df['Fecha'] = df['Fecha'].astype(str)
-        
-        # Paso 2: Intento de conversión inteligente
-        # Probamos primero con formato europeo (DD/MM/AAAA) que es el que te está dando problemas
+        # Intentamos convertir las fechas. 'dayfirst=True' ayuda con el formato DD/MM/AAAA
+        # 'errors=coerce' hace que lo que no entienda lo ponga como nulo en vez de dar error
         df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
         
-        # Paso 3: Limpieza de datos fallidos
+        # Limpiamos filas vacías o fallidas
         df = df.dropna(subset=['Fecha', 'Peso'])
         
-        # Paso 4: Normalizar (quitar horas) y asegurar que el peso sea número
+        # Normalizamos: Quitamos las horas para que la gráfica sea una línea limpia
         df['Fecha'] = df['Fecha'].dt.normalize()
+        
+        # Aseguramos que el peso sea número
         df['Peso'] = pd.to_numeric(df['Peso'], errors='coerce')
         df = df.dropna(subset=['Peso'])
         
-        # Paso 5: ORDENAR CRONOLÓGICAMENTE (Vital para que la línea de la gráfica no desaparezca)
-        df = df.sort_values(by='Fecha', ascending=True)
-        return df
+        # Ordenamos por fecha para que la línea de la gráfica no haga zig-zag
+        return df.sort_values(by='Fecha')
     return pd.DataFrame(columns=["Fecha", "Usuario", "Peso"])
 
 # --- USUARIOS ---
@@ -72,7 +70,7 @@ usuarios = {
     "Sergio": "operacion2d", "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"
 }
 
-# --- LÓGICA DE AUTO-LOGIN ---
+# --- LÓGICA DE LOGIN ---
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
@@ -87,7 +85,6 @@ if not st.session_state['logueado']:
                     st.session_state['usuario_actual'] = u
                     st.rerun()
 
-# --- PANTALLA DE LOGIN ---
 if not st.session_state['logueado']:
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
@@ -135,7 +132,6 @@ else:
     if not df.empty:
         total_perdido_grupal = 0
         stats_list = []
-        # Calculamos stats sobre el DF ya limpio y ordenado
         for user in df['Usuario'].unique():
             user_data = df[df['Usuario'] == user]
             if len(user_data) > 0:
@@ -152,76 +148,3 @@ else:
         
         st.metric(label="🔥 KILOS PERDIDOS ENTRE TODOS", value=f"{round(total_perdido_grupal, 1)} kg")
         st.write("---")
-        df_stats = pd.DataFrame(stats_list)
-
-    # --- REGISTRAR Y BORRAR ---
-    col_reg, col_del = st.columns(2)
-    with col_reg:
-        with st.expander("➕ Registrar nuevo peso"):
-            peso_defecto = 80.0
-            if not df.empty:
-                mis_datos = df[df['Usuario'] == st.session_state['usuario_actual']]
-                if not mis_datos.empty:
-                    peso_defecto = float(mis_datos.iloc[-1]['Peso'])
-            with st.form("registro_peso"):
-                f_reg = st.date_input("Fecha", datetime.now())
-                p_reg = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=peso_defecto, step=0.1)
-                if st.form_submit_button("Guardar", use_container_width=True):
-                    # GUARDADO EN FORMATO ISO (El que mejor entiende Google)
-                    nueva_fila = pd.DataFrame({
-                        "Fecha": [f_reg.strftime('%Y-%m-%d')], 
-                        "Usuario": [st.session_state['usuario_actual']], 
-                        "Peso": [p_reg]
-                    })
-                    df_upd = pd.concat([df, nueva_fila], ignore_index=True)
-                    conn.update(data=df_upd)
-                    st.success("¡Registrado!")
-                    time.sleep(1)
-                    st.rerun()
-
-    with col_del:
-        with st.expander("🗑️ Borrar último registro"):
-            if not df.empty:
-                mis_datos = df[df['Usuario'] == st.session_state['usuario_actual']]
-                if not mis_datos.empty:
-                    ultimo_idx = mis_datos.index[-1]
-                    ultimo_val = mis_datos.iloc[-1]
-                    st.warning(f"Se borrará: {ultimo_val['Peso']}kg del {ultimo_val['Fecha'].strftime('%d/%m/%Y')}")
-                    if st.button("Confirmar Borrado", use_container_width=True):
-                        # Leemos el original para borrar el índice exacto
-                        df_original = conn.read(ttl=0)
-                        df_upd = df_original.drop(ultimo_idx)
-                        conn.update(data=df_upd)
-                        st.error("Registro eliminado")
-                        time.sleep(1)
-                        st.rerun()
-
-    # --- VISUALIZACIÓN ---
-    if not df.empty:
-        st.subheader("📊 Evolución Temporal")
-        # Forzamos a Plotly a tratar el eje X como fechas
-        fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
-        fig.update_xaxes(type='date', tickformat="%d/%m/%y")
-        st.plotly_chart(fig, use_container_width=True)
-
-        st.divider()
-        st.subheader("🏆 Salón de la Fama")
-        c1, c2, c3 = st.columns(3)
-        if not df_stats.empty:
-            with c1:
-                st.markdown("#### 🔥 Esta Semana")
-                st.dataframe(df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False), hide_index=True, use_container_width=True)
-            with c2:
-                st.markdown("#### 🥇 Total Kilos")
-                st.dataframe(df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False), hide_index=True, use_container_width=True)
-            with c3:
-                st.markdown("#### 📉 Total %")
-                ranking_pct = df_stats[['Usuario', 'Perdido (%)', 'Porcentaje_Num']].sort_values(by="Porcentaje_Num", ascending=False)
-                st.dataframe(ranking_pct[['Usuario', 'Perdido (%)']], hide_index=True, use_container_width=True)
-
-        with st.expander("Ver historial completo"):
-            df_display = df.copy()
-            df_display['Fecha'] = df_display['Fecha'].dt.strftime('%d/%m/%Y')
-            st.dataframe(df_display.sort_values(by="Fecha", ascending=False), use_container_width=True, hide_index=True)
-    else:
-        st.info("Aún no hay datos registrados.")
