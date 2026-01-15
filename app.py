@@ -18,13 +18,24 @@ st.markdown("""
     .stDeployButton {display:none;}
     .block-container {padding-top: 2rem;}
     [data-testid="stMetricValue"] { font-size: 40px; color: #ff4b4b; }
-    /* Estilo para las tarjetas de medallas */
+    
+    /* Estilo para las tarjetas de medallas - ALTO CONTRASTE */
     .medal-card {
-        background-color: #f0f2f6;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #ff4b4b;
-        margin-bottom: 10px;
+        background-color: #1e293b; /* Azul muy oscuro */
+        color: #ffffff !important; /* Texto blanco puro */
+        padding: 20px;
+        border-radius: 12px;
+        border-top: 5px solid #ffd700; /* Borde superior dorado */
+        text-align: center;
+        margin-bottom: 15px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+    .medal-card b {
+        color: #ffd700; /* Nombres de medalla en dorado */
+        font-size: 1.1em;
+    }
+    .medal-card small {
+        color: #cbd5e1; /* Texto secundario en gris claro */
     }
     </style>
     """, unsafe_allow_html=True)
@@ -152,28 +163,7 @@ else:
             c3.metric("Esta Semana", f"{ms['Esta Semana (kg)']} kg", delta=ms['Esta Semana (kg)'])
             c4.metric("Progreso", f"{ms['Perdido (%)']}%")
         else:
-            st.info("Registra tu primer peso para ver tu tarjeta personal.")
-
-        st.divider()
-
-        # 3. MEDALLERO DINÁMICO
-        st.subheader("🎖️ Cuadro de Honor")
-        m1, m2, m3, m4 = st.columns(4)
-        
-        # Lógica de medallas
-        rey_semana = df_stats.sort_values("Esta Semana (kg)", ascending=False).iloc[0]
-        lider_abs = df_stats.sort_values("Total Perdido (kg)", ascending=False).iloc[0]
-        mas_constante = df_stats.sort_values("Entradas", ascending=False).iloc[0]
-        mejor_pct = df_stats.sort_values("Perdido (%)", ascending=False).iloc[0]
-
-        with m1:
-            st.markdown(f"""<div class='medal-card'>🥇 <b>Rey de la Semana</b><br>{rey_semana['Usuario']}<br><small>{rey_semana['Esta Semana (kg)']} kg perdidos</small></div>""", unsafe_allow_html=True)
-        with m2:
-            st.markdown(f"""<div class='medal-card'>🏆 <b>Líder Absoluto</b><br>{lider_abs['Usuario']}<br><small>{lider_abs['Total Perdido (kg)']} kg totales</small></div>""", unsafe_allow_html=True)
-        with m3:
-            st.markdown(f"""<div class='medal-card'>📉 <b>Mejor %</b><br>{mejor_pct['Usuario']}<br><small>{mejor_pct['Perdido (%)']}% del peso</small></div>""", unsafe_allow_html=True)
-        with m4:
-            st.markdown(f"""<div class='medal-card'>📅 <b>Más Constante</b><br>{mas_constante['Usuario']}<br><small>{mas_constante['Entradas']} pesajes</small></div>""", unsafe_allow_html=True)
+            st.info("Registra tu primer peso para activar tu tarjeta.")
 
     st.divider()
 
@@ -189,11 +179,9 @@ else:
                 f_reg = st.date_input("Fecha", datetime.now())
                 p_reg = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=peso_def, step=0.1)
                 if st.form_submit_button("Guardar", use_container_width=True):
-                    nueva_fila = pd.DataFrame({
-                        "Fecha": [f_reg.strftime('%Y-%m-%d 00:00:00')], 
-                        "Usuario": [st.session_state['usuario_actual']], 
-                        "Peso": [str(p_reg).replace('.', ',')]
-                    })
+                    fecha_sql = f_reg.strftime('%Y-%m-%d 00:00:00')
+                    peso_str = str(p_reg).replace('.', ',')
+                    nueva_fila = pd.DataFrame({"Fecha": [fecha_sql], "Usuario": [st.session_state['usuario_actual']], "Peso": [peso_str]})
                     df_raw = conn.read(ttl=0)
                     conn.update(data=pd.concat([df_raw, nueva_fila], ignore_index=True))
                     st.success("¡Registrado!")
@@ -206,11 +194,11 @@ else:
                 mis_d = df[df['Usuario'] == st.session_state['usuario_actual']]
                 if not mis_d.empty:
                     ultimo_idx = mis_d.index[-1]
-                    st.warning(f"Se borrará el registro de {mis_d.iloc[-1]['Peso']}kg")
+                    st.warning(f"Se borrará el peso de {mis_d.iloc[-1]['Peso']}kg")
                     if st.button("Confirmar Borrado", use_container_width=True):
                         df_raw = conn.read(ttl=0)
                         conn.update(data=df_raw.drop(ultimo_idx))
-                        st.error("Registro eliminado")
+                        st.error("Eliminado")
                         time.sleep(1)
                         st.rerun()
 
@@ -222,7 +210,7 @@ else:
         st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-        st.subheader("🏆 Salón de la Fama")
+        st.subheader("🏆 Rankings de la Liga")
         c1, c2, c3 = st.columns(3)
         with c1:
             st.markdown("#### 🔥 Esta Semana")
@@ -234,7 +222,6 @@ else:
             st.markdown("#### 📉 Total %")
             st.dataframe(df_stats[['Usuario', 'Perdido (%)']].sort_values(by="Perdido (%)", ascending=False), hide_index=True)
 
-        with st.expander("Ver historial completo"):
-            df_display = df.copy()
-            df_display['Fecha'] = df_display['Fecha'].dt.strftime('%d/%m/%Y')
-            st.dataframe(df_display.sort_values(by="Fecha", ascending=False), use_container_width=True, hide_index=True)
+        # --- CUADRO DE HONOR AL FINAL ---
+        st.divider()
+        st.
