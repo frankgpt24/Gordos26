@@ -10,19 +10,19 @@ import time
 # 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
-hide_st_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            header {visibility: hidden;}
-            footer {visibility: hidden;}
-            .stDeployButton {display:none;}
-            .block-container {padding-top: 2rem;}
-            </style>
-            """
-st.markdown(hide_st_style, unsafe_allow_html=True)
+# Ocultar menús de Streamlit
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display:none;}
+    .block-container {padding-top: 2rem;}
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- GESTIÓN DE COOKIES (HÍBRIDO) ---
-# Inicializamos el gestor sin decoradores de caché para evitar el error amarillo
+# --- INICIALIZAR GESTOR DE COOKIES ---
+# Lo hacemos fuera de cualquier función de caché para evitar el error amarillo
 cookie_manager = stx.CookieManager()
 
 # --- LISTA DE FRASES ---
@@ -40,29 +40,32 @@ FRASES = [
 if 'frase_dia' not in st.session_state:
     st.session_state['frase_dia'] = random.choice(FRASES)
 
+# Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
     return conn.read(ttl=0)
 
-usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"}
+usuarios = {"admin": "1234", "juan": "peso01", "maria": "peso02", "pedro": "peso03"}
 
-# --- LÓGICA DE LOGIN ---
+# --- LÓGICA DE AUTO-LOGIN ---
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
-# Intento de Auto-Login mediante Cookie
+# Si no estamos logueados en la sesión actual, intentamos leer la cookie
 if not st.session_state['logueado']:
-    # Le damos un momento al componente de cookies para que se cargue en el navegador
-    time.sleep(0.2) 
-    user_cookie = cookie_manager.get('user_weight_app')
-    
-    if user_cookie in usuarios:
-        st.session_state['logueado'] = True
-        st.session_state['usuario_actual'] = user_cookie
-        st.rerun()
+    # El componente necesita un instante para conectar con el navegador
+    # Mostramos un spinner muy breve mientras lee las cookies
+    with st.spinner("Cargando sesión..."):
+        time.sleep(0.5) # Tiempo suficiente para que el componente "despierte"
+        user_cookie = cookie_manager.get('user_weight_app')
+        
+        if user_cookie in usuarios:
+            st.session_state['logueado'] = True
+            st.session_state['usuario_actual'] = user_cookie
+            st.rerun()
 
-# --- PANTALLA DE ACCESO ---
+# --- PANTALLA DE LOGIN ---
 if not st.session_state['logueado']:
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
@@ -71,12 +74,13 @@ if not st.session_state['logueado']:
         st.write("---")
         
         with st.form("login_form"):
-            st.markdown("### Iniciar Sesión")
-            usuario_input = st.text_input("Usuario", key="user_input")
-            password_input = st.text_input("Contraseña", type="password", key="pass_input")
+            st.markdown("### Acceso al Reto")
+            # Nombres en inglés para ayudar al autocompletado del navegador
+            usuario_input = st.text_input("Username / Usuario", key="user_input")
+            password_input = st.text_input("Password / Contraseña", type="password", key="pass_input")
             recordarme = st.checkbox("Recordarme en este equipo", value=True)
             
-            submit = st.form_submit_button("Entrar al Reto", use_container_width=True)
+            submit = st.form_submit_button("Entrar", use_container_width=True)
             
             if submit:
                 if usuario_input in usuarios and usuarios[usuario_input] == password_input:
@@ -104,7 +108,7 @@ else:
     with col_logout:
         if st.button("Cerrar Sesión", use_container_width=True):
             st.session_state['logueado'] = False
-            cookie_manager.delete('user_weight_app') # Borramos cookie al salir
+            cookie_manager.delete('user_weight_app')
             st.rerun()
             
     st.divider()
@@ -141,7 +145,6 @@ else:
                 peso_inicial = user_data.iloc[0]['Peso']
                 peso_actual = user_data.iloc[-1]['Peso']
                 total_perdido = peso_inicial - peso_actual
-                # % de pérdida = (Kilos perdidos / Peso Inicial) * 100
                 porcentaje_perdido = (total_perdido / peso_inicial) * 100 if peso_inicial > 0 else 0
                 
                 if len(user_data) >= 2:
