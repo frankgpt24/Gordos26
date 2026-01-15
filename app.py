@@ -21,21 +21,21 @@ st.markdown("""
     
     /* Estilo para las tarjetas de medallas - ALTO CONTRASTE */
     .medal-card {
-        background-color: #1e293b; /* Azul muy oscuro */
-        color: #ffffff !important; /* Texto blanco puro */
+        background-color: #1e293b; 
+        color: #ffffff !important; 
         padding: 20px;
         border-radius: 12px;
-        border-top: 5px solid #ffd700; /* Borde superior dorado */
+        border-top: 5px solid #ffd700; 
         text-align: center;
         margin-bottom: 15px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
     }
     .medal-card b {
-        color: #ffd700; /* Nombres de medalla en dorado */
+        color: #ffd700; 
         font-size: 1.1em;
     }
     .medal-card small {
-        color: #cbd5e1; /* Texto secundario en gris claro */
+        color: #cbd5e1; 
     }
     </style>
     """, unsafe_allow_html=True)
@@ -131,7 +131,7 @@ else:
     df = cargar_datos()
 
     if not df.empty:
-        # Procesar estadísticas
+        # Procesar estadísticas iniciales
         total_perdido_grupal = 0
         stats_list = []
         for user in df['Usuario'].unique():
@@ -151,21 +151,7 @@ else:
 
         # 1. MARCADOR GRUPAL
         st.metric(label="🔥 KILOS PERDIDOS ENTRE TODOS", value=f"{round(total_perdido_grupal, 1)} kg")
-
-        # 2. TARJETA PERSONAL
-        st.subheader(f"👤 Tu Resumen: {st.session_state['usuario_actual']}")
-        mi_stat = df_stats[df_stats['Usuario'] == st.session_state['usuario_actual']]
-        if not mi_stat.empty:
-            ms = mi_stat.iloc[0]
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Tu Peso", f"{ms['Peso Actual']} kg")
-            c2.metric("Total Perdido", f"{ms['Total Perdido (kg)']} kg")
-            c3.metric("Esta Semana", f"{ms['Esta Semana (kg)']} kg", delta=ms['Esta Semana (kg)'])
-            c4.metric("Progreso", f"{ms['Perdido (%)']}%")
-        else:
-            st.info("Registra tu primer peso para activar tu tarjeta.")
-
-    st.divider()
+        st.divider()
 
     # --- REGISTRAR Y BORRAR ---
     col_reg, col_del = st.columns(2)
@@ -208,6 +194,20 @@ else:
         fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
         fig.update_xaxes(type='date', tickformat="%d/%m/%y")
         st.plotly_chart(fig, use_container_width=True)
+
+        # 2. TARJETA PERSONAL (AHORA AQUÍ ABAJO)
+        st.divider()
+        st.subheader(f"👤 Tu Resumen: {st.session_state['usuario_actual']}")
+        mi_stat = df_stats[df_stats['Usuario'] == st.session_state['usuario_actual']]
+        if not mi_stat.empty:
+            ms = mi_stat.iloc[0]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Tu Peso", f"{ms['Peso Actual']} kg")
+            c2.metric("Total Perdido", f"{ms['Total Perdido (kg)']} kg")
+            c3.metric("Esta Semana", f"{ms['Esta Semana (kg)']} kg", delta=ms['Esta Semana (kg)'])
+            c4.metric("Progreso", f"{ms['Perdido (%)']}%")
+        else:
+            st.info("Registra tu primer peso para activar tu tarjeta.")
 
         st.divider()
         st.subheader("🏆 Rankings de la Liga")
