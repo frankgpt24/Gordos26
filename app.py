@@ -4,10 +4,12 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import random
+import extra_streamlit_components as stx # Nueva librería para cookies
 
 # 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
+# CSS para limpieza visual e inyección de etiquetas para el navegador
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -19,15 +21,20 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
+# --- GESTIÓN DE COOKIES (RECORDAR SESIÓN) ---
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+cookie_manager = get_cookie_manager()
+
 # --- LISTA DE FRASES ---
 FRASES = [
     "¡Nunca pierdas la esperanza!",
     "El éxito es la suma de pequeños esfuerzos repetidos día tras día.",
-    "Tu cuerpo escucha todo lo que tu mente dice. ¡Mantente positivo!",
     "No te detengas hasta que te sientas orgulloso.",
     "Comer bien es una forma de respetarte a ti mismo.",
     "La disciplina es hacer lo que hay que hacer, incluso cuando no quieres.",
-    "No es una dieta, es un estilo de vida.",
     "Cada gramo cuenta, cada paso suma. ¡Tú puedes!",
     "Tu yo del futuro te agradecerá lo que hagas hoy.",
     "La meta es ser mejor de lo que fuiste ayer."
@@ -45,8 +52,15 @@ def cargar_datos():
 # --- SISTEMA DE LOGIN ---
 usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"}
 
+# Intentar auto-login con cookie
+saved_user = cookie_manager.get('user_weight_app')
+
 if 'logueado' not in st.session_state:
-    st.session_state['logueado'] = False
+    if saved_user in usuarios:
+        st.session_state['logueado'] = True
+        st.session_state['usuario_actual'] = saved_user
+    else:
+        st.session_state['logueado'] = False
 
 if not st.session_state['logueado']:
     _, col_login, _ = st.columns([1, 2, 1])
@@ -55,11 +69,13 @@ if not st.session_state['logueado']:
         st.subheader(st.session_state['frase_dia'])
         st.write("---")
         
-        # USAMOS UN FORMULARIO PARA QUE EL NAVEGADOR RECONOZCA EL LOGIN
+        # Formulario de Login
         with st.form("login_form"):
-            st.markdown("### Iniciar Sesión")
-            usuario_input = st.text_input("Usuario", placeholder="Tu nombre de usuario")
-            password_input = st.text_input("Contraseña", type="password", placeholder="Tu clave")
+            st.markdown("### Acceso")
+            # Usamos etiquetas estándar para que el navegador las detecte
+            usuario_input = st.text_input("Username", placeholder="Usuario")
+            password_input = st.text_input("Password", type="password", placeholder="Contraseña")
+            recordarme = st.checkbox("Recordarme en este equipo")
             
             submit_button = st.form_submit_button("Entrar al Reto", use_container_width=True)
             
@@ -67,15 +83,16 @@ if not st.session_state['logueado']:
                 if usuario_input in usuarios and usuarios[usuario_input] == password_input:
                     st.session_state['logueado'] = True
                     st.session_state['usuario_actual'] = usuario_input
-                    st.session_state['frase_dia'] = random.choice(FRASES)
+                    
+                    # Si marca "Recordarme", guardamos una cookie por 30 días
+                    if recordarme:
+                        cookie_manager.set('user_weight_app', usuario_input, expires_at=datetime.now() + pd.Timedelta(days=30))
+                    
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
-        
-        st.info("💡 Tu navegador te preguntará si quieres guardar los datos para la próxima vez.")
-
 else:
-    # --- CABECERA ---
+    # --- CONTENIDO DE LA APP ---
     st.title("🏆 Gordos 2026")
     st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     
@@ -85,8 +102,7 @@ else:
     with col_logout:
         if st.button("Cerrar Sesión", use_container_width=True):
             st.session_state['logueado'] = False
-            if 'frase_dia' in st.session_state:
-                del st.session_state['frase_dia']
+            cookie_manager.delete('user_weight_app') # Borramos la cookie al salir
             st.rerun()
             
     st.divider()
@@ -98,13 +114,11 @@ else:
         with st.form("registro_peso"):
             col1, col2 = st.columns(2)
             with col1:
-                fecha = st.date_input("Fecha del pesaje", datetime.now())
+                fecha = st.date_input("Fecha", datetime.now())
             with col2:
                 peso = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, step=0.1)
             
-            submit_peso = st.form_submit_button("Guardar peso", use_container_width=True)
-            
-            if submit_peso:
+            if st.form_submit_button("Guardar peso", use_container_width=True):
                 nueva_fila = pd.DataFrame({"Fecha": [str(fecha)], 
                                            "Usuario": [st.session_state['usuario_actual']], 
                                            "Peso": [peso]})
@@ -151,16 +165,13 @@ else:
         # --- TABLAS DE RANKING ---
         st.divider()
         st.subheader("🏆 Salón de la Fama")
-        
         col_rank1, col_rank2, col_rank3 = st.columns(3)
         with col_rank1:
             st.markdown("#### 🔥 Esta Semana")
-            ranking_semanal = df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False)
-            st.dataframe(ranking_semanal, hide_index=True, use_container_width=True)
+            st.dataframe(df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False), hide_index=True, use_container_width=True)
         with col_rank2:
             st.markdown("#### 🥇 Total Kilos")
-            ranking_total = df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False)
-            st.dataframe(ranking_total, hide_index=True, use_container_width=True)
+            st.dataframe(df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False), hide_index=True, use_container_width=True)
         with col_rank3:
             st.markdown("#### 📉 Total %")
             ranking_pct = df_stats[['Usuario', 'Perdido (%)', 'Porcentaje_Num']].sort_values(by="Porcentaje_Num", ascending=False)
