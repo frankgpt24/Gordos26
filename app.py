@@ -4,7 +4,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import random
-import extra_streamlit_components as stx
 import time
 
 # 1. CONFIGURACIÓN Y ESTILOS
@@ -21,10 +20,6 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# --- GESTIÓN DE COOKIES ---
-# Inicializamos el gestor al principio
-cookie_manager = stx.CookieManager()
-
 # --- LISTA DE FRASES ---
 FRASES = [
     "¡Nunca pierdas la esperanza!",
@@ -40,34 +35,18 @@ FRASES = [
 if 'frase_dia' not in st.session_state:
     st.session_state['frase_dia'] = random.choice(FRASES)
 
+# Conexión con Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos():
     return conn.read(ttl=0)
 
+# --- SISTEMA DE LOGIN ---
 usuarios = {"admin": "valencia", "Alfon": "maquina", "hperis": "admin", "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", "Sergio": "operacion2d",  "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"}
 
-# --- LÓGICA DE AUTO-LOGIN (EL TRUCO) ---
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
-if not st.session_state['logueado']:
-    # Intentamos obtener todas las cookies. 
-    # Si devuelve algo, es que el gestor ya está listo.
-    cookies = cookie_manager.get_all()
-    
-    # Si el gestor aún no responde, esperamos un pelín (solo la primera vez)
-    if not cookies:
-        time.sleep(0.5)
-        cookies = cookie_manager.get_all()
-        
-    saved_user = cookies.get('user_weight_app')
-    if saved_user in usuarios:
-        st.session_state['logueado'] = True
-        st.session_state['usuario_actual'] = saved_user
-        st.rerun()
-
-# --- PANTALLA DE LOGIN ---
 if not st.session_state['logueado']:
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
@@ -75,27 +54,26 @@ if not st.session_state['logueado']:
         st.subheader(st.session_state['frase_dia'])
         st.write("---")
         
-        with st.form("login_form"):
-            st.markdown("### Acceso")
-            usuario_input = st.text_input("Username", placeholder="Usuario")
-            password_input = st.text_input("Password", type="password", placeholder="Contraseña")
-            recordarme = st.checkbox("Recordarme en este equipo")
+        # Formulario optimizado para que el navegador "vea" un login
+        with st.form("login_form", clear_on_submit=False):
+            st.markdown("### Acceso al Reto")
+            # Usamos etiquetas claras para el navegador
+            usuario_input = st.text_input("Usuario (Username)", key="user_key")
+            password_input = st.text_input("Contraseña (Password)", type="password", key="pass_key")
             
-            submit_button = st.form_submit_button("Entrar al Reto", use_container_width=True)
+            submit_button = st.form_submit_button("Entrar", use_container_width=True)
             
             if submit_button:
                 if usuario_input in usuarios and usuarios[usuario_input] == password_input:
                     st.session_state['logueado'] = True
                     st.session_state['usuario_actual'] = usuario_input
-                    if recordarme:
-                        # Guardamos la cookie por 30 días
-                        cookie_manager.set('user_weight_app', usuario_input, 
-                                         expires_at=datetime.now() + pd.Timedelta(days=30))
+                    st.success("Accediendo...")
+                    time.sleep(0.5) # Pausa mínima para que el navegador registre el envío
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
 else:
-    # --- CONTENIDO DE LA APP (YA LOGUEADO) ---
+    # --- CABECERA ---
     st.title("🏆 Gordos 2026")
     st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     
@@ -105,7 +83,6 @@ else:
     with col_logout:
         if st.button("Cerrar Sesión", use_container_width=True):
             st.session_state['logueado'] = False
-            cookie_manager.delete('user_weight_app')
             st.rerun()
             
     st.divider()
@@ -165,7 +142,7 @@ else:
         fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
         st.plotly_chart(fig, use_container_width=True)
 
-        # Tablas
+        # Tablas de Ranking
         st.divider()
         st.subheader("🏆 Salón de la Fama")
         col_rank1, col_rank2, col_rank3 = st.columns(3)
