@@ -44,14 +44,23 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos():
     df = conn.read(ttl=0)
     if df is not None and not df.empty:
-        df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
+        # --- CORRECCIÓN DE FECHAS ---
+        df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
         df = df.dropna(subset=['Fecha', 'Peso'])
+        
+        # --- CORRECCIÓN DE PESOS (Comas por puntos) ---
+        if df['Peso'].dtype == object:
+            df['Peso'] = df['Peso'].astype(str).str.replace(',', '.')
+            
         df['Peso'] = pd.to_numeric(df['Peso'], errors='coerce')
         df = df.dropna(subset=['Peso'])
+        
+        # Normalizamos para que la gráfica no se líe con las horas
+        df['Fecha'] = df['Fecha'].dt.normalize()
         return df.sort_values(['Usuario', 'Fecha'])
     return pd.DataFrame(columns=["Fecha", "Usuario", "Peso"])
 
-# --- NUEVA LISTA DE USUARIOS ---
+# --- LISTA DE USUARIOS ---
 usuarios = {
     "admin": "valencia", 
     "Alfon": "maquina", 
@@ -73,7 +82,6 @@ if not st.session_state['logueado']:
     with st.spinner("Cargando sesión..."):
         time.sleep(0.5)
         user_cookie = cookie_manager.get('user_weight_app')
-        # Verificamos la cookie de forma insensible a mayúsculas
         if user_cookie:
             for u in usuarios:
                 if u.lower() == user_cookie.lower():
@@ -96,7 +104,6 @@ if not st.session_state['logueado']:
             submit = st.form_submit_button("Entrar", use_container_width=True)
             
             if submit:
-                # Buscamos el usuario ignorando mayúsculas/minúsculas
                 usuario_encontrado = None
                 for u in usuarios:
                     if u.lower() == u_input.lower():
@@ -167,8 +174,19 @@ else:
                 f_reg = st.date_input("Fecha", datetime.now())
                 p_reg = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=peso_defecto, step=0.1)
                 if st.form_submit_button("Guardar", use_container_width=True):
-                    nueva_fila = pd.DataFrame({"Fecha": [f_reg.strftime('%Y-%m-%d')], "Usuario": [st.session_state['usuario_actual']], "Peso": [p_reg]})
-                    df_upd = pd.concat([df, nueva_fila], ignore_index=True)
+                    # FORMATO SOLICITADO: AAAA-MM-DD 00:00:00
+                    fecha_sql = f_reg.strftime('%Y-%m-%d 00:00:00')
+                    # Peso con coma para que Google Sheets lo trate como número en español
+                    peso_str = str(p_reg).replace('.', ',')
+                    
+                    nueva_fila = pd.DataFrame({
+                        "Fecha": [fecha_sql], 
+                        "Usuario": [st.session_state['usuario_actual']], 
+                        "Peso": [peso_str]
+                    })
+                    
+                    df_raw = conn.read(ttl=0)
+                    df_upd = pd.concat([df_raw, nueva_fila], ignore_index=True)
                     conn.update(data=df_upd)
                     st.success("¡Registrado!")
                     time.sleep(1)
@@ -183,7 +201,8 @@ else:
                     ultimo_val = mis_datos.iloc[-1]
                     st.warning(f"Se borrará: {ultimo_val['Peso']}kg del {ultimo_val['Fecha'].strftime('%d/%m/%Y')}")
                     if st.button("Confirmar Borrado", use_container_width=True):
-                        df_upd = df.drop(ultimo_idx)
+                        df_raw = conn.read(ttl=0)
+                        df_upd = df_raw.drop(ultimo_idx)
                         conn.update(data=df_upd)
                         st.error("Registro eliminado")
                         time.sleep(1)
@@ -195,6 +214,7 @@ else:
     if not df.empty:
         st.subheader("📊 Evolución Temporal")
         fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
+        fig.update_xaxes(type='date', tickformat="%d/%m/%y")
         st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
