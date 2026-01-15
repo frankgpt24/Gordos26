@@ -6,11 +6,11 @@ from datetime import datetime
 import random
 import extra_streamlit_components as stx
 import time
+import re
 
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
-# Estilos
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
@@ -22,36 +22,40 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 cookie_manager = stx.CookieManager()
-
-# --- CONEXIÓN ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-def cargar_datos_con_fuerza():
-    # Forzamos la limpieza de la caché interna de Streamlit antes de leer
-    st.cache_data.clear()
+# --- MOTOR DE LIMPIEZA REFORZADO ---
+def limpiar_datos_invencible(df_raw):
+    if df_raw is None or df_raw.empty:
+        return pd.DataFrame(columns=["Fecha", "Usuario", "Peso"])
     
-    # Leemos los datos (ttl=0 para no usar caché)
-    df_raw = conn.read(ttl=0)
+    df = df_raw.copy()
     
-    if df_raw is not None and not df_raw.empty:
-        # Guardamos una copia en bruto para depuración
-        df_debug = df_raw.copy()
-        
-        df = df_raw.copy()
-        # Limpieza de Pesos: comas por puntos y convertir a número
-        df['Peso'] = df['Peso'].astype(str).str.replace(',', '.')
-        df['Peso'] = pd.to_numeric(df['Peso'], errors='coerce')
-        
-        # Limpieza de Fechas: Formato flexible
-        df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
-        
-        # Quitar errores y normalizar
-        df = df.dropna(subset=['Fecha', 'Peso'])
-        df['Fecha'] = df['Fecha'].dt.normalize()
-        df = df.sort_values(by='Fecha')
-        
-        return df, df_debug
-    return pd.DataFrame(columns=["Fecha", "Usuario", "Peso"]), pd.DataFrame()
+    # 1. LIMPIEZA DE PESO (Rescata números aunque tengan comas, espacios o texto)
+    def extraer_peso(valor):
+        try:
+            # Convertir a string y limpiar
+            s = str(valor).replace(',', '.').strip()
+            # Extraer solo el primer número que encuentre (ej: "94.6 kg" -> "94.6")
+            match = re.search(r"[-+]?\d*\.\d+|\d+", s)
+            return float(match.group()) if match else None
+        except:
+            return None
+
+    df['Peso'] = df['Peso'].apply(extraer_peso)
+    
+    # 2. LIMPIEZA DE FECHA (Prueba varios formatos para no perder nada)
+    # Primero intentamos el estándar, si falla usamos 'coerce'
+    df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
+    
+    # 3. ELIMINAR FILAS REALMENTE CORRUPTAS (Sin fecha o sin peso)
+    df = df.dropna(subset=['Fecha', 'Peso'])
+    
+    # 4. NORMALIZAR Y ORDENAR
+    df['Fecha'] = df['Fecha'].dt.normalize()
+    df = df.sort_values(by=['Fecha', 'Usuario'])
+    
+    return df
 
 # --- USUARIOS ---
 usuarios = {
@@ -60,7 +64,7 @@ usuarios = {
     "Sergio": "operacion2d", "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"
 }
 
-# --- LOGIN ---
+# --- LÓGICA DE LOGIN ---
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
@@ -92,19 +96,23 @@ if not st.session_state['logueado']:
 else:
     # --- APP PRINCIPAL ---
     st.title("🏆 Gordos 2026")
-    if st.button("🔄 Forzar Actualización (Limpiar Caché)"):
+    
+    # Botón de refresco manual
+    if st.button("🔄 Actualizar Datos"):
         st.cache_data.clear()
         st.rerun()
 
-    # Cargar datos
-    df, df_raw_debug = cargar_datos_con_fuerza()
+    # CARGA DE DATOS
+    df_raw = conn.read(ttl=0)
+    df = limpiar_datos_invencible(df_raw)
 
-    # Métrica Grupal
+    # Marcador Grupal
     if not df.empty:
         total = 0
         for u in df['Usuario'].unique():
             ud = df[df['Usuario'] == u]
-            total += (ud.iloc[0]['Peso'] - ud.iloc[-1]['Peso'])
+            if len(ud) >= 1:
+                total += (ud.iloc[0]['Peso'] - ud.iloc[-1]['Peso'])
         st.metric("🔥 KILOS PERDIDOS ENTRE TODOS", f"{round(total, 1)} kg")
 
     # Registro y Borrado
@@ -113,39 +121,52 @@ else:
         with st.expander("➕ Registrar Peso"):
             with st.form("reg"):
                 f = st.date_input("Fecha", datetime.now())
-                p = st.number_input("Peso", value=80.0, step=0.1)
+                p = st.number_input("Peso (kg)", value=80.0, step=0.1)
                 if st.form_submit_button("Guardar"):
-                    # Formato exacto que pediste
-                    nueva = pd.DataFrame({"Fecha": [f.strftime('%Y-%m-%d 0:00')], "Usuario": [st.session_state['usuario_actual']], "Peso": [str(p).replace('.', ',')]})
-                    df_ex = conn.read(ttl=0)
-                    conn.update(data=pd.concat([df_ex, nueva], ignore_index=True))
-                    st.success("OK")
+                    # Formato exacto solicitado
+                    nueva = pd.DataFrame({
+                        "Fecha": [f.strftime('%Y-%m-%d 0:00')], 
+                        "Usuario": [st.session_state['usuario_actual']], 
+                        "Peso": [str(p).replace('.', ',')]
+                    })
+                    df_actual = conn.read(ttl=0)
+                    conn.update(data=pd.concat([df_actual, nueva], ignore_index=True))
+                    st.success("Guardado en Google Sheets")
                     time.sleep(1)
+                    st.cache_data.clear()
                     st.rerun()
     with c2:
         with st.expander("🗑️ Borrar Último"):
             mis_d = df[df['Usuario'] == st.session_state['usuario_actual']]
             if not mis_d.empty:
-                idx = mis_d.index[-1]
+                idx_original = mis_d.index[-1]
+                st.warning(f"Borrar registro de {mis_d.iloc[-1]['Peso']} kg")
                 if st.button("Confirmar Borrado"):
-                    df_ex = conn.read(ttl=0)
-                    conn.update(data=df_ex.drop(idx))
+                    df_actual = conn.read(ttl=0)
+                    conn.update(data=df_actual.drop(idx_original))
+                    st.cache_data.clear()
                     st.rerun()
 
     # Gráfica
     if not df.empty:
         st.subheader("📊 Evolución")
-        fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True)
+        fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
         fig.update_xaxes(type='date', tickformat="%d/%m")
         st.plotly_chart(fig, use_container_width=True)
 
-    # SECCIÓN DE DEPURACIÓN CRÍTICA
-    st.divider()
-    with st.expander("🛠️ ZONA DE DIAGNÓSTICO (Si falla, mira aquí)"):
-        st.write("### 1. Datos tal cual vienen de Google (RAW):")
-        st.write("Si aquí no ves tus datos nuevos, es que Google Sheets no los está enviando.")
-        st.dataframe(df_raw_debug)
-        
-        st.write("### 2. Datos después de limpiar (PROCESADOS):")
-        st.write("Si aquí faltan filas respecto a la tabla de arriba, es que el formato de Fecha o Peso está mal.")
+        st.divider()
+        st.subheader("🏆 Rankings")
+        # Generar tabla de rankings
+        rank_data = []
+        for u in df['Usuario'].unique():
+            ud = df[df['Usuario'] == u]
+            p_i, p_a = ud.iloc[0]['Peso'], ud.iloc[-1]['Peso']
+            rank_data.append({"Usuario": u, "Total Perdido (kg)": round(p_i - p_a, 2), "Peso Actual": p_a})
+        st.table(pd.DataFrame(rank_data).sort_values("Total Perdido (kg)", ascending=False))
+
+    # ZONA DE DIAGNÓSTICO
+    with st.expander("🛠️ ZONA DE DIAGNÓSTICO"):
+        st.write("Datos RAW (Lo que viene de Google):")
+        st.dataframe(df_raw)
+        st.write("Datos PROCESADOS (Lo que va a la gráfica):")
         st.dataframe(df)
