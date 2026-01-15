@@ -6,9 +6,8 @@ from datetime import datetime
 import random
 import extra_streamlit_components as stx
 import time
-import re
 
-# 1. CONFIGURACIÓN
+# 1. CONFIGURACIÓN Y ESTILOS
 st.set_page_config(page_title="Gordos 2026", layout="wide", page_icon="⚖️")
 
 st.markdown("""
@@ -17,156 +16,205 @@ st.markdown("""
     header {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display:none;}
+    .block-container {padding-top: 2rem;}
     [data-testid="stMetricValue"] { font-size: 40px; color: #ff4b4b; }
     </style>
     """, unsafe_allow_html=True)
 
+# --- GESTIÓN DE COOKIES ---
 cookie_manager = stx.CookieManager()
+
+# --- LISTA DE FRASES ---
+FRASES = [
+    "¡Nunca pierdas la esperanza!",
+    "El éxito es la suma de pequeños esfuerzos repetidos día tras día.",
+    "No te detengas hasta que te sientas orgulloso.",
+    "Comer bien es una forma de respetarte a ti mismo.",
+    "La disciplina es hacer lo que hay que hacer, incluso cuando no quieres.",
+    "Cada gramo cuenta, cada paso suma. ¡Tú puedes!",
+    "Tu yo del futuro te agradecerá lo que hagas hoy.",
+    "La meta es ser mejor de lo que fuiste ayer."
+]
+
+if 'frase_dia' not in st.session_state:
+    st.session_state['frase_dia'] = random.choice(FRASES)
+
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- MOTOR DE LIMPIEZA REFORZADO ---
-def limpiar_datos_invencible(df_raw):
-    if df_raw is None or df_raw.empty:
-        return pd.DataFrame(columns=["Fecha", "Usuario", "Peso"])
-    
-    df = df_raw.copy()
-    
-    # 1. LIMPIEZA DE PESO (Rescata números aunque tengan comas, espacios o texto)
-    def extraer_peso(valor):
-        try:
-            # Convertir a string y limpiar
-            s = str(valor).replace(',', '.').strip()
-            # Extraer solo el primer número que encuentre (ej: "94.6 kg" -> "94.6")
-            match = re.search(r"[-+]?\d*\.\d+|\d+", s)
-            return float(match.group()) if match else None
-        except:
-            return None
+def cargar_datos():
+    df = conn.read(ttl=0)
+    if df is not None and not df.empty:
+        df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce')
+        df = df.dropna(subset=['Fecha', 'Peso'])
+        df['Peso'] = pd.to_numeric(df['Peso'], errors='coerce')
+        df = df.dropna(subset=['Peso'])
+        return df.sort_values(['Usuario', 'Fecha'])
+    return pd.DataFrame(columns=["Fecha", "Usuario", "Peso"])
 
-    df['Peso'] = df['Peso'].apply(extraer_peso)
-    
-    # 2. LIMPIEZA DE FECHA (Prueba varios formatos para no perder nada)
-    # Primero intentamos el estándar, si falla usamos 'coerce'
-    df['Fecha'] = pd.to_datetime(df['Fecha'], dayfirst=True, errors='coerce')
-    
-    # 3. ELIMINAR FILAS REALMENTE CORRUPTAS (Sin fecha o sin peso)
-    df = df.dropna(subset=['Fecha', 'Peso'])
-    
-    # 4. NORMALIZAR Y ORDENAR
-    df['Fecha'] = df['Fecha'].dt.normalize()
-    df = df.sort_values(by=['Fecha', 'Usuario'])
-    
-    return df
-
-# --- USUARIOS ---
+# --- NUEVA LISTA DE USUARIOS ---
 usuarios = {
-    "admin": "valencia", "Alfon": "maquina", "hperis": "admin", 
-    "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", 
-    "Sergio": "operacion2d", "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"
+    "admin": "valencia", 
+    "Alfon": "maquina", 
+    "hperis": "admin", 
+    "Josete": "weman", 
+    "Julian": "pilotas", 
+    "Mberengu": "vividor", 
+    "Sergio": "operacion2d",  
+    "Alberto": "gorriki", 
+    "Fran": "flaco", 
+    "Rubo": "chamador"
 }
 
-# --- LÓGICA DE LOGIN ---
+# --- LÓGICA DE AUTO-LOGIN ---
 if 'logueado' not in st.session_state:
     st.session_state['logueado'] = False
 
 if not st.session_state['logueado']:
-    user_cookie = cookie_manager.get('user_weight_app')
-    if user_cookie:
-        for u in usuarios:
-            if u.lower() == user_cookie.lower():
-                st.session_state['logueado'] = True
-                st.session_state['usuario_actual'] = u
-                st.rerun()
+    with st.spinner("Cargando sesión..."):
+        time.sleep(0.5)
+        user_cookie = cookie_manager.get('user_weight_app')
+        # Verificamos la cookie de forma insensible a mayúsculas
+        if user_cookie:
+            for u in usuarios:
+                if u.lower() == user_cookie.lower():
+                    st.session_state['logueado'] = True
+                    st.session_state['usuario_actual'] = u
+                    st.rerun()
 
+# --- PANTALLA DE LOGIN ---
 if not st.session_state['logueado']:
     _, col_login, _ = st.columns([1, 2, 1])
     with col_login:
         st.title("🏆 Gordos 2026")
-        with st.form("login"):
-            u_input = st.text_input("Usuario")
-            p_input = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("Entrar", use_container_width=True):
-                user_found = next((u for u in usuarios if u.lower() == u_input.lower()), None)
-                if user_found and usuarios[user_found] == p_input:
+        st.subheader(st.session_state['frase_dia'])
+        st.write("---")
+        with st.form("login_form"):
+            st.markdown("### Acceso al Reto")
+            u_input = st.text_input("Usuario", key="user_input")
+            p_input = st.text_input("Contraseña", type="password", key="pass_input")
+            recordarme = st.checkbox("Recordarme en este equipo", value=True)
+            submit = st.form_submit_button("Entrar", use_container_width=True)
+            
+            if submit:
+                # Buscamos el usuario ignorando mayúsculas/minúsculas
+                usuario_encontrado = None
+                for u in usuarios:
+                    if u.lower() == u_input.lower():
+                        usuario_encontrado = u
+                        break
+                
+                if usuario_encontrado and usuarios[usuario_encontrado] == p_input:
                     st.session_state['logueado'] = True
-                    st.session_state['usuario_actual'] = user_found
-                    cookie_manager.set('user_weight_app', user_found, expires_at=datetime.now() + pd.Timedelta(days=30))
+                    st.session_state['usuario_actual'] = usuario_encontrado
+                    if recordarme:
+                        cookie_manager.set('user_weight_app', usuario_encontrado, 
+                                         expires_at=datetime.now() + pd.Timedelta(days=30))
+                    st.success(f"¡Hola {usuario_encontrado}!")
+                    time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error("Error")
+                    st.error("Usuario o contraseña incorrectos")
 else:
-    # --- APP PRINCIPAL ---
+    # --- CONTENIDO DE LA APP ---
     st.title("🏆 Gordos 2026")
+    st.markdown(f"### *{st.session_state['frase_dia']}* 💪")
     
-    # Botón de refresco manual
-    if st.button("🔄 Actualizar Datos"):
-        st.cache_data.clear()
-        st.rerun()
+    col_user, col_logout = st.columns([4, 1])
+    with col_user:
+        st.write(f"Conectado como: **{st.session_state['usuario_actual']}**")
+    with col_logout:
+        if st.button("Cerrar Sesión", use_container_width=True):
+            st.session_state['logueado'] = False
+            cookie_manager.delete('user_weight_app')
+            st.rerun()
+            
+    st.divider()
+    
+    df = cargar_datos()
 
-    # CARGA DE DATOS
-    df_raw = conn.read(ttl=0)
-    df = limpiar_datos_invencible(df_raw)
-
-    # Marcador Grupal
+    # --- MÉTRICA GRUPAL ---
     if not df.empty:
-        total = 0
-        for u in df['Usuario'].unique():
-            ud = df[df['Usuario'] == u]
-            if len(ud) >= 1:
-                total += (ud.iloc[0]['Peso'] - ud.iloc[-1]['Peso'])
-        st.metric("🔥 KILOS PERDIDOS ENTRE TODOS", f"{round(total, 1)} kg")
+        total_perdido_grupal = 0
+        stats_list = []
+        for user in df['Usuario'].unique():
+            user_data = df[df['Usuario'] == user]
+            if len(user_data) > 0:
+                p_ini = user_data.iloc[0]['Peso']
+                p_act = user_data.iloc[-1]['Peso']
+                perdido = p_ini - p_act
+                total_perdido_grupal += perdido
+                pct = (perdido / p_ini) * 100 if p_ini > 0 else 0
+                sem = user_data.iloc[-2]['Peso'] - p_act if len(user_data) >= 2 else 0
+                stats_list.append({
+                    "Usuario": user, "Peso Actual": p_act, "Total Perdido (kg)": round(perdido, 2),
+                    "Perdido (%)": f"{round(pct, 2)}%", "Esta Semana (kg)": round(sem, 2), "Porcentaje_Num": pct
+                })
+        
+        st.metric(label="🔥 KILOS PERDIDOS ENTRE TODOS", value=f"{round(total_perdido_grupal, 1)} kg")
+        st.write("---")
+        df_stats = pd.DataFrame(stats_list)
 
-    # Registro y Borrado
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.expander("➕ Registrar Peso"):
-            with st.form("reg"):
-                f = st.date_input("Fecha", datetime.now())
-                p = st.number_input("Peso (kg)", value=80.0, step=0.1)
-                if st.form_submit_button("Guardar"):
-                    # Formato exacto solicitado
-                    nueva = pd.DataFrame({
-                        "Fecha": [f.strftime('%Y-%m-%d 0:00')], 
-                        "Usuario": [st.session_state['usuario_actual']], 
-                        "Peso": [str(p).replace('.', ',')]
-                    })
-                    df_actual = conn.read(ttl=0)
-                    conn.update(data=pd.concat([df_actual, nueva], ignore_index=True))
-                    st.success("Guardado en Google Sheets")
+    # --- REGISTRAR Y BORRAR ---
+    col_reg, col_del = st.columns(2)
+    with col_reg:
+        with st.expander("➕ Registrar nuevo peso"):
+            peso_defecto = 80.0
+            if not df.empty:
+                mis_datos = df[df['Usuario'] == st.session_state['usuario_actual']]
+                if not mis_datos.empty:
+                    peso_defecto = float(mis_datos.iloc[-1]['Peso'])
+            with st.form("registro_peso"):
+                f_reg = st.date_input("Fecha", datetime.now())
+                p_reg = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=peso_defecto, step=0.1)
+                if st.form_submit_button("Guardar", use_container_width=True):
+                    nueva_fila = pd.DataFrame({"Fecha": [f_reg.strftime('%Y-%m-%d')], "Usuario": [st.session_state['usuario_actual']], "Peso": [p_reg]})
+                    df_upd = pd.concat([df, nueva_fila], ignore_index=True)
+                    conn.update(data=df_upd)
+                    st.success("¡Registrado!")
                     time.sleep(1)
-                    st.cache_data.clear()
-                    st.rerun()
-    with c2:
-        with st.expander("🗑️ Borrar Último"):
-            mis_d = df[df['Usuario'] == st.session_state['usuario_actual']]
-            if not mis_d.empty:
-                idx_original = mis_d.index[-1]
-                st.warning(f"Borrar registro de {mis_d.iloc[-1]['Peso']} kg")
-                if st.button("Confirmar Borrado"):
-                    df_actual = conn.read(ttl=0)
-                    conn.update(data=df_actual.drop(idx_original))
-                    st.cache_data.clear()
                     st.rerun()
 
-    # Gráfica
+    with col_del:
+        with st.expander("🗑️ Borrar último registro"):
+            if not df.empty:
+                mis_datos = df[df['Usuario'] == st.session_state['usuario_actual']]
+                if not mis_datos.empty:
+                    ultimo_idx = mis_datos.index[-1]
+                    ultimo_val = mis_datos.iloc[-1]
+                    st.warning(f"Se borrará: {ultimo_val['Peso']}kg del {ultimo_val['Fecha'].strftime('%d/%m/%Y')}")
+                    if st.button("Confirmar Borrado", use_container_width=True):
+                        df_upd = df.drop(ultimo_idx)
+                        conn.update(data=df_upd)
+                        st.error("Registro eliminado")
+                        time.sleep(1)
+                        st.rerun()
+                else:
+                    st.info("No tienes registros todavía.")
+
+    # --- VISUALIZACIÓN ---
     if not df.empty:
-        st.subheader("📊 Evolución")
+        st.subheader("📊 Evolución Temporal")
         fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
-        fig.update_xaxes(type='date', tickformat="%d/%m")
         st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-        st.subheader("🏆 Rankings")
-        # Generar tabla de rankings
-        rank_data = []
-        for u in df['Usuario'].unique():
-            ud = df[df['Usuario'] == u]
-            p_i, p_a = ud.iloc[0]['Peso'], ud.iloc[-1]['Peso']
-            rank_data.append({"Usuario": u, "Total Perdido (kg)": round(p_i - p_a, 2), "Peso Actual": p_a})
-        st.table(pd.DataFrame(rank_data).sort_values("Total Perdido (kg)", ascending=False))
+        st.subheader("🏆 Salón de la Fama")
+        c1, c2, c3 = st.columns(3)
+        if not df_stats.empty:
+            with c1:
+                st.markdown("#### 🔥 Esta Semana")
+                st.dataframe(df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False), hide_index=True, use_container_width=True)
+            with c2:
+                st.markdown("#### 🥇 Total Kilos")
+                st.dataframe(df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False), hide_index=True, use_container_width=True)
+            with c3:
+                st.markdown("#### 📉 Total %")
+                ranking_pct = df_stats[['Usuario', 'Perdido (%)', 'Porcentaje_Num']].sort_values(by="Porcentaje_Num", ascending=False)
+                st.dataframe(ranking_pct[['Usuario', 'Perdido (%)']], hide_index=True, use_container_width=True)
 
-    # ZONA DE DIAGNÓSTICO
-    with st.expander("🛠️ ZONA DE DIAGNÓSTICO"):
-        st.write("Datos RAW (Lo que viene de Google):")
-        st.dataframe(df_raw)
-        st.write("Datos PROCESADOS (Lo que va a la gráfica):")
-        st.dataframe(df)
+        with st.expander("Ver historial completo"):
+            df_display = df.copy()
+            df_display['Fecha'] = df_display['Fecha'].dt.strftime('%d/%m/%Y')
+            st.dataframe(df_display.sort_values(by="Fecha", ascending=False), use_container_width=True, hide_index=True)
+    else:
+        st.info("Aún no hay datos registrados.")
