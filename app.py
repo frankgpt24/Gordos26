@@ -148,3 +148,72 @@ else:
         
         st.metric(label="🔥 KILOS PERDIDOS ENTRE TODOS", value=f"{round(total_perdido_grupal, 1)} kg")
         st.write("---")
+        df_stats = pd.DataFrame(stats_list)
+
+    # --- REGISTRAR Y BORRAR ---
+    col_reg, col_del = st.columns(2)
+    with col_reg:
+        with st.expander("➕ Registrar nuevo peso"):
+            peso_defecto = 80.0
+            if not df.empty:
+                mis_datos = df[df['Usuario'] == st.session_state['usuario_actual']]
+                if not mis_datos.empty:
+                    peso_defecto = float(mis_datos.iloc[-1]['Peso'])
+            with st.form("registro_peso"):
+                f_reg = st.date_input("Fecha", datetime.now())
+                p_reg = st.number_input("Peso (kg)", min_value=30.0, max_value=200.0, value=peso_defecto, step=0.1)
+                if st.form_submit_button("Guardar", use_container_width=True):
+                    # CAMBIO CLAVE: Guardamos en el formato exacto de tu hoja: AAAA-MM-DD 0:00
+                    fecha_formateada = f_reg.strftime('%Y-%m-%d 0:00')
+                    nueva_fila = pd.DataFrame({
+                        "Fecha": [fecha_formateada], 
+                        "Usuario": [st.session_state['usuario_actual']], 
+                        "Peso": [p_reg]
+                    })
+                    # Leemos el original para concatenar bien
+                    df_original = conn.read(ttl=0)
+                    df_upd = pd.concat([df_original, nueva_fila], ignore_index=True)
+                    conn.update(data=df_upd)
+                    st.success("¡Registrado con formato correcto!")
+                    time.sleep(1)
+                    st.rerun()
+
+    with col_del:
+        with st.expander("🗑️ Borrar último registro"):
+            if not df.empty:
+                mis_datos = df[df['Usuario'] == st.session_state['usuario_actual']]
+                if not mis_datos.empty:
+                    ultimo_idx = mis_datos.index[-1]
+                    ultimo_val = mis_datos.iloc[-1]
+                    st.warning(f"Se borrará: {ultimo_val['Peso']}kg del {ultimo_val['Fecha'].strftime('%d/%m/%Y')}")
+                    if st.button("Confirmar Borrado", use_container_width=True):
+                        df_original = conn.read(ttl=0)
+                        df_upd = df_original.drop(ultimo_idx)
+                        conn.update(data=df_upd)
+                        st.error("Registro eliminado")
+                        time.sleep(1)
+                        st.rerun()
+
+    # --- VISUALIZACIÓN ---
+    if not df.empty:
+        st.subheader("📊 Evolución Temporal")
+        fig = px.line(df, x="Fecha", y="Peso", color="Usuario", markers=True, template="plotly_white")
+        fig.update_xaxes(type='date', tickformat="%d/%m/%y")
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.divider()
+        st.subheader("🏆 Salón de la Fama")
+        c1, c2, c3 = st.columns(3)
+        if not df_stats.empty:
+            with c1:
+                st.markdown("#### 🔥 Esta Semana")
+                st.dataframe(df_stats[['Usuario', 'Esta Semana (kg)']].sort_values(by="Esta Semana (kg)", ascending=False), hide_index=True, use_container_width=True)
+            with c2:
+                st.markdown("#### 🥇 Total Kilos")
+                st.dataframe(df_stats[['Usuario', 'Total Perdido (kg)']].sort_values(by="Total Perdido (kg)", ascending=False), hide_index=True, use_container_width=True)
+            with c3:
+                st.markdown("#### 📉 Total %")
+                ranking_pct = df_stats[['Usuario', 'Perdido (%)', 'Porcentaje_Num']].sort_values(by="Porcentaje_Num", ascending=False)
+                st.dataframe(ranking_pct[['Usuario', 'Perdido (%)']], hide_index=True, use_container_width=True)
+    else:
+        st.info("Aún no hay datos registrados.")
