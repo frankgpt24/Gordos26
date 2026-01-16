@@ -85,7 +85,7 @@ def cargar_datos():
 usuarios = {
     "admin": "valencia", "Alfon": "maquina", "hperis": "admin", 
     "Josete": "weman", "Julian": "pilotas", "Mberengu": "vividor", 
-    "Sergio": "operacion2d", "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador"
+    "Sergio": "operacion2d", "Alberto": "gorriki", "Fran": "flaco", "Rubo": "chamador", "Canet": "padel"
 }
 
 if 'logueado' not in st.session_state:
